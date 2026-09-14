@@ -53,11 +53,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git jq 7zip libarchive-tools unzip \
+            git jq libarchive-tools unzip \
             python3 binutils tar gzip curl gettext-base
-          # the PKGBUILD calls `7z`; Ubuntu's official 7-Zip package ships 7zz
-          sudo ln -sf "$(command -v 7zz)" /usr/local/bin/7z
-          7z i >/dev/null && echo "7z OK (APFS-capable)"
+          # official 7-Zip (APFS-capable): distro 7zip packages differ in
+          # binary name, so install a pinned upstream arm64 build as `7z`
+          curl -fL -o /tmp/7z.tar.xz https://www.7-zip.org/a/7z2409-linux-arm64.tar.xz
+          mkdir -p /tmp/7z
+          tar -xJf /tmp/7z.tar.xz -C /tmp/7z 7zz
+          sudo install /tmp/7z/7zz /usr/local/bin/7z
+          7z i | grep -qi apfs && echo "7z OK (APFS-capable)"
 
       - name: Apply version and checksum overrides
         working-directory: devecostudio
