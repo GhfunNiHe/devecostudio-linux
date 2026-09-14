@@ -21,8 +21,8 @@ Usage:
   ./build.sh --stage=DIR [--deb] [--rpm] [--out DIR]
 
 Options:
-  --deb        also build devecostudio_<ver>_<rel>_amd64.deb (needs nfpm)
-  --rpm        also build devecostudio-<ver>-<rel>.x86_64.rpm (needs nfpm)
+  --deb        also build devecostudio_<ver>_<rel>_<arch>.deb (needs nfpm)
+  --rpm        also build devecostudio-<ver>-<rel>.<arch>.rpm (needs nfpm)
   --stage=DIR  package an existing staging tree (e.g. makepkg's pkg/) and
                skip the build entirely
   --out=DIR    output directory for tarball/.deb/.rpm (default: .)
@@ -30,9 +30,10 @@ Options:
   -h, --help   show this help
 
 Sources:
-  You'll need to place these files next to the script:
+  You'll need to place these files next to the script (per host arch):
   - devecostudio-mac.zip
-  - commandline-tools-linux-x64.zip
+  - commandline-tools-linux-x64.zip (x86_64 hosts)
+  - commandline-tools-linux-arm64.zip (aarch64 hosts)
 EOF
   exit 0
 }
@@ -64,14 +65,23 @@ warning(){ printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 _dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 cd "$_dir"
 
+# PKGBUILD is the single source of truth — source it early for pkgver/pkgrel
+# and the arch-dependent source names/URLs (standalone runs default CARCH
+# to the host machine; see the case block in the PKGBUILD)
+source PKGBUILD
+
+# Output artifact naming (by host arch)
+case "$(uname -m)" in
+  aarch64) _nfmarch=arm64; _rpmarch=aarch64; _debarch=arm64; _tararch=arm64 ;;
+  *)       _nfmarch=amd64; _rpmarch=x86_64; _debarch=amd64; _tararch=x86_64 ;;
+esac
+
 # ── build the staging tree ──
 if [[ -n "$stage_dir" ]]; then
   # --stage: only packaging, from an existing staging tree (e.g. makepkg's
   # pkg/). Source the PKGBUILD just to read pkgver/pkgrel.
   pkgdir="$stage_dir"
   [[ -d "$pkgdir/opt/devecostudio" ]] || error "stage dir has no opt/devecostudio: $pkgdir"
-  # shellcheck source=PKGBUILD
-  source PKGBUILD
   _msg "Staging tree ready: $pkgdir"
 else
   mkdir -p build/src build/downloads
@@ -79,16 +89,15 @@ else
   # $srcdir — do the same here
   cp devecostudio.desktop build/src/ 2>/dev/null || true
 
-  # ── 0. Fetch IDEA + CPython (auto-downloaded by the PKGBUILD) ──
-  _ideaver=$(grep -E '^_ideaver=' PKGBUILD | head -1 | cut -d= -f2 | tr -d '"'"'"' \r')
-  _idea_url="https://download.jetbrains.com/idea/idea-${_ideaver}.tar.gz"
-  _python_fname="cpython-3.12.10+20250409-x86_64-unknown-linux-gnu-install_only.tar.gz"
+  # ── 0. Fetch IDEA + CPython (arch-dependent names come from the PKGBUILD) ──
+  _idea_url="https://download.jetbrains.com/idea/idea-${_ideaver}${_idea_suffix}.tar.gz"
+  _python_fname="cpython-3.12.10+20250409-${_pyarch}-unknown-linux-gnu-install_only.tar.gz"
   _python_url="https://github.com/astral-sh/python-build-standalone/releases/download/20250409/${_python_fname}"
 
-  # read the N-th entry of the PKGBUILD sha256sums array (1-based)
-  _read_sha() { sed -n "/^sha256sums=(/,/^)/p" PKGBUILD | sed -n "$(( $1 + 1 ))p" | tr -d " '"; }
-  _sha_idea=$(_read_sha 3)      # idea tarball
-  _sha_python=$(_read_sha 5)    # cpython tarball
+  # sha256sums array, 0-indexed: [0]=mac zip, [1]=cli zip, [2]=idea,
+  # [3]=desktop, [4]=cpython (per-arch values resolved by the PKGBUILD)
+  _sha_idea="${sha256sums[2]}"
+  _sha_python="${sha256sums[4]}"
 
   sha_ok() { [[ "$2" == "SKIP" || "$(sha256sum "$1" 2>/dev/null | awk '{print $1}')" == "$2" ]]; }
   dl() { # url dest sha
@@ -117,11 +126,12 @@ else
     _msg "Extracting devecostudio-mac.zip..."
     extract_zip devecostudio-mac.zip build/src
   fi
-  # commandline-tools-linux-x64.zip → command-line-tools/
+  # commandline-tools-linux-<x64|arm64>.zip → command-line-tools/
+  _cli_zip="commandline-tools-linux-${_cliarch}.zip"
   if [[ ! -d build/src/command-line-tools ]]; then
-    [[ -f commandline-tools-linux-x64.zip ]] || error "commandline-tools-linux-x64.zip not found"
-    _msg "Extracting commandline-tools-linux-x64.zip..."
-    extract_zip commandline-tools-linux-x64.zip build/src
+    [[ -f "$_cli_zip" ]] || error "$_cli_zip not found"
+    _msg "Extracting $_cli_zip..."
+    extract_zip "$_cli_zip" build/src
   fi
   # idea tarball → idea-IU-*/
   if ! find build/src -maxdepth 1 -type d -name 'idea-IU-*' -print -quit | grep -q .; then
@@ -142,8 +152,6 @@ else
   export startdir="$PWD"
   rm -rf "$pkgdir"
   _msg "Running PKGBUILD prepare()/package()..."
-  # shellcheck source=PKGBUILD
-  source PKGBUILD
   prepare
   package
   _msg "Staging tree ready: $pkgdir"
@@ -154,25 +162,29 @@ mkdir -p "$outdir"
 _msg "Building tarball..."
 chmod -R u+rw "$pkgdir/opt/devecostudio"
 cp "$pkgdir/usr/share/applications/devecostudio.desktop" "$pkgdir/opt/"
-tar -C "$pkgdir/opt" -I "gzip -1" -cf "$outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz" \
+tar -C "$pkgdir/opt" -I "gzip -1" -cf "$outdir/devecostudio-${pkgver}-linux-${_tararch}.tar.gz" \
   devecostudio devecostudio.desktop
 rm -f "$pkgdir/opt/devecostudio.desktop"
-_msg "Created $outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz"
+_msg "Created $outdir/devecostudio-${pkgver}-linux-${_tararch}.tar.gz"
 
 # ── 4. Optional nfpm packaging ──
 if [[ "$want_deb" == "1" || "$want_rpm" == "1" ]]; then
   command -v nfpm >/dev/null 2>&1 || error "nfpm not found"
   command -v envsubst >/dev/null 2>&1 || error "envsubst (gettext) not found"
-  PKGVER=$pkgver PKGREL=$pkgrel envsubst < nfpm.yaml > "$outdir/.nfpm-rendered.yaml"
+  # PKGDIR: staging tree (relative like CI's "pkg/devecostudio", or the
+  # full-build "build/pkg"); PKGARCH: nfpm arch (amd64/arm64, normalized
+  # to x86_64/aarch64 for rpm by nfpm)
+  PKGVER=$pkgver PKGREL=$pkgrel PKGARCH=$_nfmarch PKGDIR="$pkgdir" \
+    envsubst < nfpm.yaml > "$outdir/.nfpm-rendered.yaml"
   if [[ "$want_deb" == "1" ]]; then
     _msg "Building .deb..."
     nfpm pkg --config "$outdir/.nfpm-rendered.yaml" --packager deb \
-      --target "$outdir/devecostudio_${pkgver}-${pkgrel}_amd64.deb"
+      --target "$outdir/devecostudio_${pkgver}-${pkgrel}_${_debarch}.deb"
   fi
   if [[ "$want_rpm" == "1" ]]; then
     _msg "Building .rpm..."
     nfpm pkg --config "$outdir/.nfpm-rendered.yaml" --packager rpm \
-      --target "$outdir/devecostudio-${pkgver}-${pkgrel}.x86_64.rpm"
+      --target "$outdir/devecostudio-${pkgver}-${pkgrel}.${_rpmarch}.rpm"
   fi
   rm -f "$outdir/.nfpm-rendered.yaml"
 fi

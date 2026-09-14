@@ -1,5 +1,5 @@
 name: devecostudio
-arch: amd64
+arch: "${PKGARCH}"
 platform: linux
 version: "${PKGVER}"
 release: "${PKGREL}"
@@ -39,10 +39,10 @@ overrides:
       - fcitx5
 
 contents:
-  - src: pkg/devecostudio/opt/devecostudio
+  - src: "${PKGDIR}/opt/devecostudio"
     dst: /opt/devecostudio
     type: tree
-  - src: pkg/devecostudio/usr/share/applications/devecostudio.desktop
+  - src: "${PKGDIR}/usr/share/applications/devecostudio.desktop"
     dst: /usr/share/applications/devecostudio.desktop
   # /usr/bin -> /opt/devecostudio symlinks (as installed by the Arch package)
   - dst: /usr/bin/devecostudio

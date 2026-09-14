@@ -10,7 +10,8 @@
 # 1. devecostudio-mac.zip — Mac (X86 or ARM, either works)
 #    Download from: https://developer.huawei.com/consumer/cn/deveco-studio/
 #
-# 2. commandline-tools-linux-x64.zip — Command Line Tools for Linux
+# 2. commandline-tools-linux-x64.zip / commandline-tools-linux-arm64.zip
+#    — Command Line Tools for Linux (pick by host arch)
 #    Download from same page
 
 pkgname=devecostudio
@@ -18,6 +19,13 @@ pkgdesc='Huawei DevEco Studio repackaged for Arch Linux'
 pkgver=26.0.0.821
 _ideaver=2026.1.3
 pkgrel=2
+# ── Architecture-dependent sources ──
+# x86_64:  idea-<ver>.tar.gz + cpython x86_64 + CLI tools linux-x64
+# aarch64: idea-<ver>-aarch64.tar.gz + cpython aarch64 + CLI tools linux-arm64
+case "${CARCH:-$(uname -m)}" in
+  aarch64) _idea_suffix=-aarch64; _pyarch=aarch64; _cliarch=arm64 ;;
+  *)       _idea_suffix=;         _pyarch=x86_64; _cliarch=x64 ;;
+esac
 # ── CLI tool exposure ──
 # The bundled Huawei CLI tools (hvigorw, ohpm, hstack, codelinter, Emulator)
 # live under /opt/devecostudio/tools/bin/. Set _expose_cli_tools=false to
@@ -35,7 +43,7 @@ _shared_scripts=(
   'python3-wrapper'
   'append.vmoptions'
 )
-arch=('x86_64')
+arch=('x86_64' 'aarch64')
 url='https://developer.huawei.com/consumer/cn/deveco-studio/'
 license=('custom:Commercial')
 depends=(
@@ -54,17 +62,30 @@ makedepends=('jq' 'p7zip' 'python')
 options=('!strip')
 source=(
   "devecostudio-mac.zip"
-  "commandline-tools-linux-x64.zip"
-  "idea-${_ideaver}.tar.gz::https://download.jetbrains.com/idea/idea-${_ideaver}.tar.gz"
+  "commandline-tools-linux-${_cliarch}.zip"
+  "idea-${_ideaver}${_idea_suffix}.tar.gz::https://download.jetbrains.com/idea/idea-${_ideaver}${_idea_suffix}.tar.gz"
   "devecostudio.desktop"
-  "cpython-3.12.10+20250409-x86_64-unknown-linux-gnu-install_only.tar.gz::https://github.com/astral-sh/python-build-standalone/releases/download/20250409/cpython-3.12.10+20250409-x86_64-unknown-linux-gnu-install_only.tar.gz"
+  "cpython-3.12.10+20250409-${_pyarch}-unknown-linux-gnu-install_only.tar.gz::https://github.com/astral-sh/python-build-standalone/releases/download/20250409/cpython-3.12.10+20250409-${_pyarch}-unknown-linux-gnu-install_only.tar.gz"
 )
+# The Mac zip checksum depends on which Mac variant was downloaded (x64 vs
+# ARM zips differ); the cli/idea/cpython sums are per host arch.
+if [[ "${CARCH:-$(uname -m)}" == "aarch64" ]]; then
+  _sum_mac='ada1d638dd2a8b08b8ceb11416f962acb4a038af25e56697f96e21f21d11a9dd'
+  _sum_cli='7da91c5d58d08304cc8ee7c7d546f4c7c5bb032518058e65a3386c215b07191e'
+  _sum_idea='7659e791609233c3e6bf67c1bfcc86f5fa1176477ca5815ae6125b0eae84a88b'
+  _sum_py='91557c4bc1f65c65c2bf1d0fc7a2816d21b1128f11d2d421af7bd5f6ce07232a'
+else
+  _sum_mac='738195cabf9777db0e5aeee5096ea7ed3f1f78db0f31c3c25ae09adfc93bea8a'
+  _sum_cli='58da7359019e9360a8bb82da0cd1d3b3b26fedc338379f257849f2162e3ac1fc'
+  _sum_idea='a6f049716da1d09d9e0ec1500c60bf01a5ff8a0fe2419178dd1ff2fdb2b77563'
+  _sum_py='e9cf6f7da499a4400ba30ae1da8f7ef25ce97827bd8c1084717aa05438035186'
+fi
 sha256sums=(
-  '738195cabf9777db0e5aeee5096ea7ed3f1f78db0f31c3c25ae09adfc93bea8a'
-  '58da7359019e9360a8bb82da0cd1d3b3b26fedc338379f257849f2162e3ac1fc'
-  'a6f049716da1d09d9e0ec1500c60bf01a5ff8a0fe2419178dd1ff2fdb2b77563'
+  "${_sum_mac}"
+  "${_sum_cli}"
+  "${_sum_idea}"
   'b530705424c7fdd61c3eaa477d6c79643e5d9d0cf7ecadc8f6e96559b7c6dc2d'
-  'e9cf6f7da499a4400ba30ae1da8f7ef25ce97827bd8c1084717aa05438035186'
+  "${_sum_py}"
 )
 
 prepare() {
@@ -130,6 +151,12 @@ package() {
       exit 1
     fi
   done
+
+  # Linux-native component layout differs per arch (IDEA tarball layout)
+  case "${CARCH:-$(uname -m)}" in
+    aarch64) _native_dir=linux-aarch64; _jna_dir=aarch64; _jq_arch=aarch64 ;;
+    *)       _native_dir=linux-x86_64;  _jna_dir=amd64;  _jq_arch=amd64 ;;
+  esac
 
   msg2 "Creating directory skeleton..."
   mkdir -p "$_pkg"/{bin,jbr,lib,plugins,modules,tools,license,sdk}
@@ -225,10 +252,10 @@ package() {
 
   # native libs
   rm -rf "$_pkg/lib/native" "$_pkg/lib/pty4j" "$_pkg/lib/jna" "$_pkg/lib/skiko-awt-runtime-all"
-  mkdir -p "$_pkg/lib/native/linux-x86_64" "$_pkg/lib/pty4j/linux" "$_pkg/lib/jna/amd64" "$_pkg/lib/skiko-awt-runtime-all"
-  cp -a "$_idea/lib/native/linux-x86_64/"* "$_pkg/lib/native/linux-x86_64/"
+  mkdir -p "$_pkg/lib/native/$_native_dir" "$_pkg/lib/pty4j/linux" "$_pkg/lib/jna/$_jna_dir" "$_pkg/lib/skiko-awt-runtime-all"
+  cp -a "$_idea/lib/native/$_native_dir/"* "$_pkg/lib/native/$_native_dir/"
   cp -a "$_idea/lib/pty4j/linux/"* "$_pkg/lib/pty4j/linux/"
-  cp -a "$_idea/lib/jna/amd64/libjnidispatch.so" "$_pkg/lib/jna/amd64/"
+  cp -a "$_idea/lib/jna/$_jna_dir/libjnidispatch.so" "$_pkg/lib/jna/$_jna_dir/"
   cp -a "$_idea/lib/skiko-awt-runtime-all/"* "$_pkg/lib/skiko-awt-runtime-all/"
 
   msg2 "Replacing platform-specific components from CLI tools (SDK, wrappers)..."
@@ -290,7 +317,7 @@ package() {
   # ── product-info.json (extracted from Mac DMG, transformed for Linux via jq) ──
   jq \
     --arg os "Linux" \
-    --arg arch "amd64" \
+    --arg arch "$_jq_arch" \
     --arg launcher "bin/devecostudio" \
     --arg java "jbr/bin/java" \
     --arg vmopts "bin/devecostudio64-lin.vmoptions" \
@@ -383,7 +410,9 @@ PYEOF
   chmod +x "$_pybase/bin/python3"
   # codelinter (and the IDE's appanalyzer) writes logs and temp files
   # under tools/codelinter/linter/result/ — make it world-writable so
-  # running without sudo works.
+  # running without sudo works. (The wrapper creates it at runtime; the
+  # arm64 CLI zip no longer ships it, hence mkdir -p.)
+  mkdir -p "$_pkg/tools/codelinter/linter/result"
   chmod 777 "$_pkg/tools/codelinter/linter/result"
   # macOS code-signature xattr sidecar files ("<file>:com.apple.cs.*") ship
   # in plugins' node_modules etc.; they are useless on Linux
