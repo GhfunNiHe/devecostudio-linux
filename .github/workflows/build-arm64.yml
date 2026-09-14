@@ -26,14 +26,13 @@ jobs:
   build:
     runs-on: ubuntu-24.04-arm
 
-    # No `container:` block: the non-privileged container cannot swapon
-    # (nfpm's rpm packager builds the whole cpio payload in memory and
-    # peaks at ~16 GB RSS). Run on the host, add swap with sudo, and do
-    # the actual build inside `docker run archlinux:base-devel` — the
-    # container inherits the host's memory + swap.
-    # NOTE: a pkgver override also changes the IDEA/CPython tarballs;
-    # their checksums are enforced by build.sh and must match, so only
-    # override pkgver for the same toolset versions.
+    # Runs build.sh directly on the runner (no container: archlinux images
+    # are x86_64-only, and build.sh exists precisely to run the PKGBUILD on
+    # any distro). Swap is added because nfpm's rpm packager builds the
+    # whole cpio payload in memory and peaks at ~16 GB RSS.
+    # NOTE: a pkgver override also changes the IDEA/CPython tarballs; their
+    # checksums are enforced by build.sh and must match, so only override
+    # pkgver for the same toolset versions.
 
     steps:
       - name: Checkout repository
@@ -41,7 +40,7 @@ jobs:
         with:
           path: devecostudio
 
-      - name: Add swap on the host (nfpm rpm packaging needs ~16 GB RSS)
+      - name: Add swap (nfpm rpm packaging needs ~16 GB RSS)
         run: |
           sudo rm -f /ci.swap
           sudo fallocate -l 14G /ci.swap
@@ -49,6 +48,16 @@ jobs:
           sudo mkswap /ci.swap >/dev/null
           sudo swapon /ci.swap
           free -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git jq 7zip libarchive-tools unzip \
+            python3 binutils tar gzip curl gettext-base
+          # the PKGBUILD calls `7z`; Ubuntu's official 7-Zip package ships 7zz
+          sudo ln -sf "$(command -v 7zz)" /usr/local/bin/7z
+          7z i >/dev/null && echo "7z OK (APFS-capable)"
 
       - name: Apply version and checksum overrides
         working-directory: devecostudio
@@ -81,48 +90,21 @@ jobs:
             "${{ inputs.cli_zip_url }}" &
 
           wait
+          ls -la devecostudio-mac.zip commandline-tools-linux-arm64.zip
 
-      - name: Build and package inside archlinux container
+      - name: Download nfpm (arm64 static binary)
         run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE":/work -w /work \
-            archlinux:base-devel bash -c '
-            set -e
-            echo "=== free -h (inside container) ==="
-            free -h
-            pacman -Syu --noconfirm
-            pacman -S --needed --noconfirm git jq p7zip sudo
-            useradd -m builder
-            echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-            chown -R builder:builder /work
-            runuser -u builder -- bash -c "
-              cd /work/devecostudio
-              # no -c: makepkg --clean removes pkg/, which the packaging
-              # step below needs (build.sh --stage reads the staging tree)
-              makepkg -sf --noconfirm
-            "
-            # nfpm is not in the Arch repos; fetch the static binary from
-            # the GitHub release (pinned version; update deliberately).
-            curl -fL https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz \
-              | tar xz -C /usr/local/bin nfpm
-            nfpm --version | grep -m1 GitVersion
-            cd /work/devecostudio
-            if [[ -d pkg/devecostudio ]]; then
-              # --stage packages the existing makepkg tree: it always emits
-              # the distro-agnostic tarball, and --deb/--rpm add the nfpm
-              # packages — no duplicate tar step needed.
-              ./build.sh --stage=pkg/devecostudio --deb --rpm
-            else
-              echo "pkg/devecostudio not found; skipping packages"
-            fi
-          '
+          curl -fL https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz \
+            | tar xz -C /tmp nfpm
+          sudo install /tmp/nfpm /usr/local/bin/nfpm
+          nfpm --version | grep -m1 GitVersion
 
-      - name: Upload Arch package
-        uses: actions/upload-artifact@v4
-        with:
-          name: devecostudio-arch-arm64
-          path: devecostudio/*.pkg.tar.zst
-          if-no-files-found: warn
+      - name: Build and package
+        working-directory: devecostudio
+        run: |
+          # full build: runs the PKGBUILD prepare()/package(), then produces
+          # the distro-agnostic tarball + .deb + .rpm (nfpm)
+          ./build.sh --deb --rpm
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
