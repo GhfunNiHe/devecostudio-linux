@@ -1,0 +1,146 @@
+name: Build DevEco Studio PKGBUILD (arm64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mac_zip_url:
+        description: URL to the Mac zip (devecostudio-mac-<ver>.zip)
+        required: true
+      cli_zip_url:
+        description: URL to commandline-tools-linux-arm64-<ver>.zip
+        required: true
+      pkgver:
+        description: 'Override pkgver (e.g. 26.0.0.821). Leave empty to use the value in PKGBUILD.'
+        required: false
+        default: ''
+      mac_zip_sha256:
+        description: 'SHA256 of the Mac zip. Leave empty to use the value in PKGBUILD.'
+        required: false
+        default: ''
+      cli_zip_sha256:
+        description: 'SHA256 of the commandline-tools zip. Leave empty to use the value in PKGBUILD.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+
+    # No `container:` block: the non-privileged container cannot swapon
+    # (nfpm's rpm packager builds the whole cpio payload in memory and
+    # peaks at ~16 GB RSS). Run on the host, add swap with sudo, and do
+    # the actual build inside `docker run archlinux:base-devel` — the
+    # container inherits the host's memory + swap.
+    # NOTE: a pkgver override also changes the IDEA/CPython tarballs;
+    # their checksums are enforced by build.sh and must match, so only
+    # override pkgver for the same toolset versions.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: devecostudio
+
+      - name: Add swap on the host (nfpm rpm packaging needs ~16 GB RSS)
+        run: |
+          sudo rm -f /ci.swap
+          sudo fallocate -l 14G /ci.swap
+          sudo chmod 600 /ci.swap
+          sudo mkswap /ci.swap >/dev/null
+          sudo swapon /ci.swap
+          free -h
+
+      - name: Apply version and checksum overrides
+        working-directory: devecostudio
+        run: |
+          if [[ -n "${{ inputs.pkgver }}" ]]; then
+            sed -i "s/^pkgver=.*/pkgver=${{ inputs.pkgver }}/" PKGBUILD
+            echo "pkgver overridden to ${{ inputs.pkgver }}"
+          fi
+          # the first "_sum_mac=" assignment is the aarch64 branch;
+          # mac zip is _sum_mac, cli zip _sum_cli (the next line)
+          line=$(grep -n "_sum_mac=" PKGBUILD | head -1 | cut -d: -f1)
+          if [[ -n "${{ inputs.mac_zip_sha256 }}" ]]; then
+            sed -i "${line}s|.*|  _sum_mac='${{ inputs.mac_zip_sha256 }}'|" PKGBUILD
+            echo "mac zip sha256 overridden"
+          fi
+          if [[ -n "${{ inputs.cli_zip_sha256 }}" ]]; then
+            sed -i "$((line+1))s|.*|  _sum_cli='${{ inputs.cli_zip_sha256 }}'|" PKGBUILD
+            echo "cli zip sha256 overridden"
+          fi
+
+      - name: Download source archives
+        working-directory: devecostudio
+        run: |
+          curl -fL \
+            -o devecostudio-mac.zip \
+            "${{ inputs.mac_zip_url }}" &
+
+          curl -fL \
+            -o commandline-tools-linux-arm64.zip \
+            "${{ inputs.cli_zip_url }}" &
+
+          wait
+
+      - name: Build and package inside archlinux container
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/work -w /work \
+            archlinux:base-devel bash -c '
+            set -e
+            echo "=== free -h (inside container) ==="
+            free -h
+            pacman -Syu --noconfirm
+            pacman -S --needed --noconfirm git jq p7zip sudo
+            useradd -m builder
+            echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+            chown -R builder:builder /work
+            runuser -u builder -- bash -c "
+              cd /work/devecostudio
+              # no -c: makepkg --clean removes pkg/, which the packaging
+              # step below needs (build.sh --stage reads the staging tree)
+              makepkg -sf --noconfirm
+            "
+            # nfpm is not in the Arch repos; fetch the static binary from
+            # the GitHub release (pinned version; update deliberately).
+            curl -fL https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz \
+              | tar xz -C /usr/local/bin nfpm
+            nfpm --version | grep -m1 GitVersion
+            cd /work/devecostudio
+            if [[ -d pkg/devecostudio ]]; then
+              # --stage packages the existing makepkg tree: it always emits
+              # the distro-agnostic tarball, and --deb/--rpm add the nfpm
+              # packages — no duplicate tar step needed.
+              ./build.sh --stage=pkg/devecostudio --deb --rpm
+            else
+              echo "pkg/devecostudio not found; skipping packages"
+            fi
+          '
+
+      - name: Upload Arch package
+        uses: actions/upload-artifact@v4
+        with:
+          name: devecostudio-arch-arm64
+          path: devecostudio/*.pkg.tar.zst
+          if-no-files-found: warn
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: devecostudio-deb-arm64
+          path: devecostudio/devecostudio_*_arm64.deb
+          if-no-files-found: warn
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: devecostudio-rpm-arm64
+          path: devecostudio/devecostudio-*.aarch64.rpm
+          if-no-files-found: warn
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: devecostudio-tarball-arm64
+          path: devecostudio/devecostudio-*-linux-arm64.tar.gz
+          if-no-files-found: warn
