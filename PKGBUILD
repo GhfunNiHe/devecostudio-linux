@@ -17,7 +17,7 @@ pkgname=devecostudio
 pkgdesc='Huawei DevEco Studio repackaged for Arch Linux'
 pkgver=26.0.0.851
 _ideaver=2026.1.3
-pkgrel=2
+pkgrel=3
 # ── CLI tool exposure ──
 # The bundled Huawei CLI tools (hvigorw, ohpm, hstack, codelinter, Emulator)
 # live under /opt/devecostudio/tools/bin/. Set _expose_cli_tools=false to
@@ -33,6 +33,7 @@ _shared_scripts=(
   'install-extra-sdk.sh'
   'patch-extra-sdk.sh'
   'patch-previewer.py'
+  'patch-emulator-list.py'
   'emulator-wrapper-patch.sh'
   'python3-wrapper'
   'append.vmoptions'
@@ -129,7 +130,8 @@ package() {
   local _idea=$(find "$srcdir" -mindepth 1 -maxdepth 1 -type d -name 'idea-IU-*' | head -1)
   local _cli="$srcdir/command-line-tools"
   local _pkg="$pkgdir/opt/devecostudio"
-  local _scripts=(devecostudio.sh install-extra-sdk.sh patch-extra-sdk.sh patch-previewer.py emulator-wrapper-patch.sh python3-wrapper append.vmoptions)
+  local _scripts=(devecostudio.sh install-extra-sdk.sh patch-extra-sdk.sh patch-previewer.py
+    patch-emulator-list.py emulator-wrapper-patch.sh python3-wrapper append.vmoptions)
   for _s in "${_scripts[@]}"; do
     if [[ ! -f "$startdir/scripts/$_s" ]]; then
       error "missing shared script: scripts/$_s (edit/commit scripts/ and rebuild)"
@@ -230,6 +232,15 @@ package() {
   # The success path is left untouched.
   python3 "$startdir/scripts/patch-previewer.py" \
     "$_pkg/tools/hvigor/hvigor-ohos-plugin/node_modules/@ohos/coverage/lib/src/commandLine/localTest/previewer.js"
+
+  msg2 "Making the IDE report osType windows (cloud emulator images)..."
+  # Huawei's remote SDK manager returns no emulator images for osType
+  # "linux"; their own Linux CLI emulator hardcodes "windows" for exactly
+  # that reason. Only the sdk-core copy of OsTypeUtil is patched - the
+  # hwlib copy is used by the update checker and the template renderer
+  # and must keep reporting the truth. Skipped unless the emulator binary
+  # is x86_64, since the listed images could never boot elsewhere.
+  python3 "$startdir/scripts/patch-emulator-list.py" "$_pkg"
 
   msg2 "Transforming vmoptions (macOS → Linux)..."
   sed \

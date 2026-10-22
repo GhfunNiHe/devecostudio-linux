@@ -225,7 +225,9 @@ will not compile against 6.1.1 — adjust or guard the code accordingly.
 ### Emulator
 
 The emulator works, but before first use you must accept the software
-agreements and download the system images via the command line.
+agreements and download a system image. The IDE's Device Manager lists the
+cloud images (non-public HarmonyOS images need a Huawei account signed in);
+the command line downloads them anonymously.
 
 <details>
 <summary><b>How?</b></summary>
@@ -294,12 +296,9 @@ distinguishes Mac from non-Mac, and the non-Mac branch hardcodes the
 Device Manager and debugging. The package fixes this with a symlink:
 `Emulator.exe -> Emulator` in `tools/emulator/`.
 
-Second, system images must be downloaded manually because of how the
-official installer works: when the emulator is missing, its wizard downloads
-the binary *and* the system image together. Since this package bundles the
-binary, the IDE thinks the emulator is installed and never offers the
-wizard, leaving the system image as the only missing piece — see the
-Emulator section above for how to get one.
+Second, the Device Manager lists the cloud system images — the IDE is
+patched to report `osType` `windows` to Huawei's server, which is what
+Huawei's own Linux CLI emulator does too.
 
 Third, the emulator's software agreements: the IDE launches the emulator
 binary directly, and if the agreements were never accepted it waits

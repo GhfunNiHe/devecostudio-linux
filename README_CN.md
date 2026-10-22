@@ -210,7 +210,7 @@ IDE 运行需要捆绑的华为命令行工具，它们也可以独立在终端�
 
 ### 模拟器
 
-模拟器可用，但首次使用前需要通过命令行同意软件协议并下载系统镜像。
+模拟器可用，但首次使用前需要同意软件协议并下载系统镜像。IDE 的 Device Manager 会列出云端镜像（非公开的 HarmonyOS 镜像需要登录华为账号），命令行方式则可以匿名下载。
 
 <details>
 <summary><b>怎么做？</b></summary>
@@ -263,7 +263,7 @@ PKGBUILD 解压 Mac DMG，取出平台无关的部分，然后用 IntelliJ IDEA 
 
 其一，华为的代码只区分 Mac 与非 Mac，而非 Mac 分支硬编码了 `Emulator.exe` 文件名。在 Linux 上这个文件不存在，导致 Device Manager 和调试不可用。本包通过符号链接修复：`tools/emulator/` 下的 `Emulator.exe -> Emulator`。
 
-其二，系统镜像必须手动下载，这是官方安装器的工作方式决定的：当模拟器缺失时，其向导会同时下载二进制和系统镜像。由于本包已内置二进制，IDE 认为模拟器已安装、从不弹出向导，系统镜像成了唯一缺失的部分——获取方式见上文"模拟器"一节。
+其二，Device Manager 里可以列出云端系统镜像——IDE 被改为向华为服务端上报 `osType` 为 `windows`，华为自己的 Linux CLI 模拟器也是这么做的。
 
 其三，模拟器的软件协议：IDE 直接启动模拟器二进制，如果协议从未被同意，它会静默等待输入 `y`。`Emulator` 包装器在首次使用时自动同意（当 `~/Library/Caches/Huawei/Emulator26.0/.emu_config` 不存在时，执行 `hemulator ...` 会运行 `-license accept` 并退出），因此当你在 IDE 中使用时协议已经就绪。如需退出自动同意，请清空该 `.emu_config` 文件。
 

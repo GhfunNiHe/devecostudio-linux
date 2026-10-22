@@ -71,10 +71,55 @@ break the media pipeline.
 
 The IDE's "install emulator" wizard only appears when the emulator binary
 is missing, and downloads binary **and** system image together. Because we
-bundle the binary, the wizard never triggers — system images are the only
-missing piece and must be fetched manually:
-`Emulator -install -deviceType phone -osVersion "<version>"` (anonymous),
-or copied from another platform's install into `~/.Huawei/Sdk/system-image/`.
+bundle the binary, the wizard never triggers. The images themselves are listed
+in the Device Manager (see the next section for why that works on Linux);
+without touching the IDE they can be fetched anonymously with
+`Emulator -install -deviceType phone -osVersion "<version>"`, or copied from
+another platform's install into `~/.Huawei/Sdk/system-image/`.
+
+### Emulator cloud image list (`osType` bent to `windows`)
+
+Huawei's remote SDK manager (`POST .../sdkmanager/v9/hos/getSdkList`) returns
+an empty list for `osType: "linux"` and the full image set for `"windows"`.
+The IDE builds that parameter through `SdkSettings.getOsType()`, whose default
+method body is literally `invokestatic OsTypeUtil.getOsType()`, on the class in
+`plugins/openharmony/lib/sdk-core-*.jar`. That method maps `os.name` to
+`mac` / `windows` / `linux` / `other` through constant-pool strings.
+`scripts/patch-emulator-list.py` rewrites its Linux branch (`ldc #31`,
+"linux", followed by `areturn`) to return the "windows" constant instead. That
+is exactly what Huawei's own Linux CLI emulator does: the binary carries
+`windows` immediately before the `osType` request field.
+
+Three constraints the patcher is built around:
+
+- **Only the sdk-core copy is patched.** `lib/hwlib.jar` ships a second
+  `OsTypeUtil.getOsType()` whose callers are `DevEcoUpdateCheckerService` (the
+  update checker) and `projectmgmt`'s `RenderHashMap`, which does
+  `putIfAbsent("osType", ...)` and so feeds `windows` into the project-template
+  renderer. Bending that copy would make the IDE pretend to be Windows to the
+  update server and inject `windows` into generated project files, for no
+  benefit: the whole SDK-manager chain (`SdkSettings`,
+  `AbstractRemoteComponentLoader`, `InstallTaskImpl`,
+  `OhRemoteComponentLoader`, `ARKUIXRemoteComponentLoader`) resolves to the
+  sdk-core class.
+- **Constant-pool indices are resolved, not hardcoded.** `#31`/`#27` are
+  incidental to the class layout, so the patcher parses the pool, finds the
+  `String` entries for "linux" and "windows", and handles both `ldc` and
+  `ldc_w`. It exits non-zero when the expected shape is absent, so an upstream
+  reshuffle fails the build instead of shipping a silent no-op.
+- **x86_64 only.** The images are x86_64 QEMU guests, so the patcher skips any
+  tree whose `tools/emulator/Emulator` is not `EM_X86_64` - a non-x86_64 IDE
+  would otherwise list images it cannot boot.
+
+One side effect is worth knowing: the same utility serves every SDK-manager
+request, so with the patch in place the **SDK Manager sees the Windows
+component list**. Install additional SDKs the way `install-extra-sdk.sh` does
+(from Huawei's commandline-tools zip) rather than through the IDE's SDK
+Manager.
+
+Verified on 26.0.0.851: `getOsType()` returns `windows` from the patched jar
+(`linux` from the pristine one), and the Device Manager lists the cloud
+images.
 
 ### Emulator paths (`~/Library/Huawei/Sdk`)
 
