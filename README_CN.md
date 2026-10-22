@@ -174,6 +174,8 @@ IDE 运行需要捆绑的华为命令行工具，它们也可以独立在终端�
 - `_hprefix_generic_tools=true`
     - 若设为 `false`，则不添加 `h` 前缀，以原名暴露 `codelinter` 和 `Emulator`
 
+这两个变量只对 Arch 包生效。`.deb` / `.rpm` 的 `/usr/bin` 软链在 `nfpm.yaml` 中静态声明，固定为带 `h` 前缀的名字；tarball 则不含 `/usr/bin` 软链。
+
 </td></tr></thead></table>
 </details>
 

@@ -185,6 +185,10 @@ Both behaviors are controlled by variables at the top of the PKGBUILD:
 - `_hprefix_generic_tools=true`
     - If set to `false`, no `h` prefix is added; `codelinter` and `Emulator` are exposed under their original names
 
+Both only apply to the Arch package. The `/usr/bin` links in the `.deb` and
+`.rpm` are declared statically in `nfpm.yaml` — always the `h`-prefixed
+names — and the tarball ships no `/usr/bin` links at all.
+
 </td></tr></thead></table>
 </details>
 
