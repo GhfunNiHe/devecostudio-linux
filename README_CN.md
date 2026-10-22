@@ -53,9 +53,7 @@
 
     makepkg -si
 
-如果出现校验和不符，说明华为更新了 IDE，你需要自行测试此项目是否仍然可用。
-
-要更新校验和以匹配你的本地文件：
+两个华为 zip 不做校验（`sha256sums` 里为 `SKIP`）：它们的下载链接带签名且短期有效，华为也会用不同的文件内容重发同一版本。IDEA 与 CPython 会校验；若这两项报不符，用下列命令更新：
 
     updpkgsums
 
@@ -85,7 +83,7 @@
     # 例：构建 tarball 和 rpm 包
     ./build.sh --rpm
 
-注意：`build.sh` 并**不会**校验两个华为 zip。IDEA 和 CPython 则会按 PKGBUILD 的 `sha256sums` 校验。
+注意：两个华为 zip 完全不校验；IDEA 和 CPython 按 PKGBUILD 的 `sha256sums` 校验。
 
 </ul>
 </details>
@@ -106,10 +104,10 @@
 4. 填写两个下载 URL：
    - `mac_zip_url` — Mac zip 的 URL
    - `cli_zip_url` — Linux Command Line Tools zip 的 URL
-5. 可选地覆盖版本号和校验值（留空则使用 `PKGBUILD` 中的值）：
-   - `pkgver` — 例如 `6.1.1.280`
-   - `mac_zip_sha256` / `cli_zip_sha256` — 两个 zip 的 SHA256；未测试过的版本可用 `SKIP` 跳过校验
-6. 运行结束后，从运行页面下载对应平台的 artifact：
+5. 可选地覆盖 `pkgver`（留空则使用 `PKGBUILD` 中的值）。
+6. 选择要构建的工件——取消勾选可缩短耗时，其中 `.rpm` 还会额外占用 16 GB 的 swapfile，是最慢的一步：
+   - `make_arch`、`make_deb`、`make_rpm`、`make_tarball`（默认全选）
+7. 运行结束后，从运行页面下载对应平台的 artifact：
    - `devecostudio-arch` — Arch 包
    - `devecostudio-deb` — Debian/Ubuntu 包
    - `devecostudio-rpm` — Fedora/RHEL 包

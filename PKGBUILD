@@ -66,9 +66,12 @@ source=(
   "devecostudio.desktop"
   "cpython-3.12.10+20250409-x86_64-unknown-linux-gnu-install_only.tar.gz::https://github.com/astral-sh/python-build-standalone/releases/download/20250409/cpython-3.12.10+20250409-x86_64-unknown-linux-gnu-install_only.tar.gz"
 )
+# The two Huawei zips are 'SKIP': their download URLs are signature-bearing
+# and short-lived, and Huawei republishes the same version with different
+# bytes, so a pinned sum only ever breaks the build.
 sha256sums=(
-  'ad7f7100b3d95bacfa1b803ad1026c1e3b0f23cbb61c868f5684fbaa5b3772d8'
-  'ab604bd92721d5cbcafd154e6461d46b9f1b105e7b89eab04a9d046681198082'
+  'SKIP'
+  'SKIP'
   'a6f049716da1d09d9e0ec1500c60bf01a5ff8a0fe2419178dd1ff2fdb2b77563'
   'b530705424c7fdd61c3eaa477d6c79643e5d9d0cf7ecadc8f6e96559b7c6dc2d'
   'e9cf6f7da499a4400ba30ae1da8f7ef25ce97827bd8c1084717aa05438035186'

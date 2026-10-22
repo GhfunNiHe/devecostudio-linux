@@ -23,6 +23,7 @@ Usage:
 Options:
   --deb        also build devecostudio_<ver>_<rel>_amd64.deb (needs nfpm)
   --rpm        also build devecostudio-<ver>-<rel>.x86_64.rpm (needs nfpm)
+  --no-tarball skip the tarball (when only .deb/.rpm matter)
   --stage=DIR  package an existing staging tree (e.g. makepkg's pkg/) and
                skip the build entirely
   --out=DIR    output directory for tarball/.deb/.rpm (default: .)
@@ -40,12 +41,14 @@ EOF
 _clean=0
 want_deb=0
 want_rpm=0
+want_tarball=1
 outdir="."
 stage_dir=""
 for a in "$@"; do
   case "$a" in
     --deb) want_deb=1 ;;
     --rpm) want_rpm=1 ;;
+    --no-tarball) want_tarball=0 ;;
     --clean) _clean=1 ;;
     --stage=*) stage_dir="${a#--stage=}" ;;
     --out=*) outdir="${a#--out=}" ;;
@@ -151,15 +154,17 @@ else
   _msg "Staging tree ready: $pkgdir"
 fi
 
-# ── 3. Distro-agnostic tarball (always produced) ──
+# ── 3. Distro-agnostic tarball ──
 mkdir -p "$outdir"
-_msg "Building tarball..."
-chmod -R u+rw "$pkgdir/opt/devecostudio"
-cp "$pkgdir/usr/share/applications/devecostudio.desktop" "$pkgdir/opt/"
-tar -C "$pkgdir/opt" -I "gzip -1" -cf "$outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz" \
-  devecostudio devecostudio.desktop
-rm -f "$pkgdir/opt/devecostudio.desktop"
-_msg "Created $outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz"
+if (( want_tarball )); then
+  _msg "Building tarball..."
+  chmod -R u+rw "$pkgdir/opt/devecostudio"
+  cp "$pkgdir/usr/share/applications/devecostudio.desktop" "$pkgdir/opt/"
+  tar -C "$pkgdir/opt" -I "gzip -1" -cf "$outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz" \
+    devecostudio devecostudio.desktop
+  rm -f "$pkgdir/opt/devecostudio.desktop"
+  _msg "Created $outdir/devecostudio-${pkgver}-linux-x86_64.tar.gz"
+fi
 
 # ── 4. Optional nfpm packaging ──
 if [[ "$want_deb" == "1" || "$want_rpm" == "1" ]]; then

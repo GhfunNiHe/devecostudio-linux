@@ -53,9 +53,10 @@ What to do next depends on your distro:
 
     makepkg -si
 
-If you find checksum errors, it means Huawei has updated the IDE, and you will need to test for yourself whether this project still works.
-
-To update checksums to match your local files:
+The two Huawei zips are not checksum-verified (`SKIP` in `sha256sums`): their
+download URLs are signed and short-lived, and Huawei republishes the same
+version with different bytes. The IDEA and CPython tarballs are verified; if
+one of those reports a mismatch, update the sums with:
 
     updpkgsums
 
@@ -85,9 +86,8 @@ Then:
     # Example: build the tarball and an rpm package
     ./build.sh --rpm
 
-Note: `build.sh` does **not** verify the two Huawei zips, 
-while IDEA and CPython are downloaded with checksum
-verification from the PKGBUILD's `sha256sums`.
+Note: the two Huawei zips are not checksum-verified at all; IDEA and CPython
+are, from the PKGBUILD's `sha256sums`.
 
 </ul>
 </details>
@@ -108,10 +108,11 @@ The same build can be run in GitHub Actions:
 4. Fill in the two download URLs:
    - `mac_zip_url` — URL of the Mac zip
    - `cli_zip_url` — URL of the Linux Command Line Tools zip
-5. Optionally override the version and checksums (leave empty to keep the values in `PKGBUILD`):
-   - `pkgver` — e.g. `6.1.1.280`
-   - `mac_zip_sha256` / `cli_zip_sha256` — SHA256 of the two zips; use `SKIP` to skip verification for an untested version
-6. When the run finishes, download the artifact matching your platform:
+5. Optionally override `pkgver` (leave empty to keep the value in `PKGBUILD`).
+6. Choose which artifacts to build — unchecking one shortens the run, and
+   `.rpm` in particular adds the 16 GB swapfile and the slowest step:
+   - `make_arch`, `make_deb`, `make_rpm`, `make_tarball` (all on by default)
+7. When the run finishes, download the artifact matching your platform:
    - `devecostudio-arch` — Arch package
    - `devecostudio-deb` — Debian/Ubuntu package
    - `devecostudio-rpm` — Fedora/RHEL package

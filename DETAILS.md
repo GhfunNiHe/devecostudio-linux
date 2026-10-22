@@ -22,8 +22,10 @@ platform-native (and unusable on Linux) or duplicated by the CLI: `jbr`,
 The two Huawei zips are **user-supplied** (Huawei's download links are
 signed and expire), renamed to version-independent filenames
 (`devecostudio-mac.zip`, `commandline-tools-linux-x64.zip`). Only the IDEA
-tarball is auto-downloaded. Checksums live in `sha256sums`; users changing
-versions update `pkgver` + the two checksums (or use `SKIP`).
+tarball is auto-downloaded. The two Huawei zips are `'SKIP'` in `sha256sums`
+(signed, expiring links; Huawei also re-issues the same version with
+different bytes), so a new version only needs `pkgver`; the IDEA and CPython
+tarballs keep real sums.
 
 ## The magic, by area
 
@@ -720,10 +722,11 @@ Two modes:
   `pkg/`) without building. This is what the GitHub Actions workflow uses
   after `makepkg` — no duplicated build.
 
-Both modes always produce the distro-agnostic tarball
+Both modes produce the distro-agnostic tarball
 (`devecostudio-<ver>-linux-x86_64.tar.gz`, `gzip -1` for speed — the same
-compression the workflow uses), and optionally `.deb`/`.rpm` with **nfpm**
-(`--deb`/`--rpm`). `-h`/`--help` prints usage.
+compression the workflow uses) unless `--no-tarball` is given, plus
+optionally `.deb`/`.rpm` with **nfpm** (`--deb`/`--rpm`). `-h`/`--help`
+prints usage.
 
 What build.sh does beyond makepkg:
 
@@ -765,10 +768,21 @@ the nfpm rpm packager builds the whole cpio payload in memory and peaks at
 - the actual build runs inside `docker run --rm -v $GITHUB_WORKSPACE:/work
   archlinux:base-devel`: `makepkg -sf` (**no `-c`** — `--clean` removes
   `pkg/`, which the packaging step needs) as a non-root `builder` user,
-  then `/work/build.sh --stage=pkg/devecostudio --deb --rpm` (tarball +
-  nfpm deb/rpm from the same tree). nfpm is not in the Arch repos, so it
-  is downloaded from the GitHub release (`nfpm_2.47.0_Linux_x86_64.tar.gz`,
+  then `/work/build.sh --stage=pkg/devecostudio ...` (tarball + nfpm
+  deb/rpm from the same tree). nfpm is not in the Arch repos, so it is
+  downloaded from the GitHub release (`nfpm_2.47.0_Linux_x86_64.tar.gz`,
   version pinned — update deliberately).
+
+The run is trimmed by four boolean inputs — `make_arch`, `make_deb`,
+`make_rpm`, `make_tarball` (all on by default):
+
+- `make_arch=false` adds `makepkg --noarchive`: the Arch package is not
+  needed, only the staging tree the other formats are made from, so the
+  zstd step is skipped.
+- `make_deb`/`make_rpm=false` skips the nfpm download and that format;
+  `make_rpm=false` also skips the 14 GB swapfile step, since nothing else
+  peaks near the runner's RAM.
+- `make_tarball=false` passes `--no-tarball`, dropping the 4 GB gzip.
 
 Artifacts are uploaded **separately** (not one giant bundle) so users
 only download what they need; each is ~3–4 GB:
